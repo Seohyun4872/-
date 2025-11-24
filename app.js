@@ -1,17 +1,42 @@
 // ==============================
-// 기본 설정
+// 기본 설정 + 베이스맵 레이어들
 // ==============================
 
 const map = L.map("map").setView([37.56, 126.97], 11); // 서울 중앙 기준
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+// 1) 여러 종류의 타일 레이어 정의
+const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: "&copy; OpenStreetMap contributors",
-}).addTo(map);
+}).addTo(map); // 기본으로 켜둘 레이어
+
+const lightLayer = L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+  {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap, &copy; CartoDB",
+  }
+);
+
+const darkLayer = L.tileLayer(
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+  {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap, &copy; CartoDB",
+  }
+);
+
+// 2) 베이스맵 묶기 (레이어 컨트롤용)
+const baseMaps = {
+  "기본 지도": osmLayer,
+  "라이트": lightLayer,
+  "다크": darkLayer,
+};
 
 let allFeatures = [];
-let baseLayer = null;
-let highlightLayer = null;
+let baseLayer = null;        // 전체 상권 레이어
+let highlightLayer = null;   // 추천 상권 레이어
+let layerControl = null;     // 레이어 컨트롤 핸들
 
 // ==============================
 // GeoJSON 로딩
@@ -22,7 +47,7 @@ fetch("data/seoul_areas.geojson")
   .then((data) => {
     allFeatures = data.features;
 
-    // 1) 전체 상권을 연한 색으로 배경에 깔기
+    // 1) 전체 상권을 연한 색으로 배경에 깔기 (오버레이 레이어)
     baseLayer = L.geoJSON(data, {
       style: {
         color: "#999",
@@ -46,7 +71,18 @@ fetch("data/seoul_areas.geojson")
       },
     }).addTo(map);
 
-    // 2) 드롭다운 옵션 채우기
+    // 2) 오버레이 레이어 묶기 (전체 상권 + 나중에 추천 상권)
+    const overlayMaps = {
+      "전체 상권": baseLayer,
+      // "추천 상권": highlightLayer  // highlightLayer는 나중에 동적으로 추가
+    };
+
+    // 3) 레이어 컨트롤 생성 (우측 상단에 뜨는 체크/라디오 박스)
+    layerControl = L.control.layers(baseMaps, overlayMaps, {
+      collapsed: false, // false면 항상 펼쳐진 상태
+    }).addTo(map);
+
+    // 4) 드롭다운 옵션 채우기
     fillIndicatorOptions(allFeatures);
   })
   .catch((err) => {
@@ -154,16 +190,21 @@ document.getElementById("runBtn").addEventListener("click", () => {
 });
 
 // ==============================
-// 지도 강조 레이어 갱신
+// 지도 강조 레이어 갱신 (추천 상권)
 // ==============================
 
 function updateHighlightLayer(topFeatures) {
+  // 이전 추천 레이어가 있으면 지도에서 제거 + 레이어 컨트롤에서도 제거
   if (highlightLayer) {
     map.removeLayer(highlightLayer);
+    if (layerControl) {
+      layerControl.removeLayer(highlightLayer);
+    }
   }
 
   if (!topFeatures.length) return;
 
+  // 새 추천 상권 레이어 생성
   highlightLayer = L.geoJSON(topFeatures, {
     style: {
       color: "red",
@@ -186,6 +227,11 @@ function updateHighlightLayer(topFeatures) {
       `);
     },
   }).addTo(map);
+
+  // 레이어 컨트롤에 "추천 상권" 오버레이로 등록
+  if (layerControl) {
+    layerControl.addOverlay(highlightLayer, "추천 상권");
+  }
 
   // TOP 상권들 중심으로 줌 맞추기
   const bounds = highlightLayer.getBounds();
@@ -263,3 +309,4 @@ function updateResultTable(topFeatures, options) {
 
   resultDiv.innerHTML = summaryHtml + tableHtml;
 }
+
